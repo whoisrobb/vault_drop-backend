@@ -1,0 +1,25 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: vault_drop
+
+
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/vault_drop
+    # url: jdbc:postgresql://postgres:fant4stic@localhost:5432/vault_drop
+    username: postgres
+    password: fant4stic
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+
+aws:
+#  region: "Testing"
+  region: ${BUCKET_REGION}
+  secret-key: ${SECRET_ACCESS_KEY}
+  bucket: ${BUCKET_NAME}
+  access-key: ${ACCESS_KEY}
