@@ -11,4 +11,6 @@ public interface FolderService {
     FolderDTO findById(String id);
 
     List<FolderDTO> findAllRootFolders();
+
+    void deleteFolder(String id);
 }

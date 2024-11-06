@@ -10,26 +10,37 @@ import com.muchiri.vault_drop.service.FileService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
-import software.amazon.awssdk.services.s3.model.PutObjectResponse;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
 
-import java.io.File;
-import java.io.InputStream;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.math.BigInteger;
 import java.security.SecureRandom;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Optional;
 import java.util.stream.Collectors;
 
-// service impl
 @Service
 public class FileServiceImpl implements FileService {
 
     @Autowired
     private final S3Client s3Client;
+//    private final S3Presigner s3Presigner;
+
+    @Value("${aws.region}")
+    private String bucketRegion;
+
+    @Value("${aws.bucket}")
+    private String bucketName;
 
     private final FileRepository fileRepository;
     private final FolderRepository folderRepository;
@@ -42,39 +53,22 @@ public class FileServiceImpl implements FileService {
         this.folderRepository = folderRepository;
     }
 
-    @Value("${BUCKET_NAME}")
-    private String bucketName;
-
-    // fileservice impl
     @Override
-    public FileDTO create(
+    public List<FileDTO> create(
             FolderDTO parent,
-            String fileName,
-            Long size,
-            String contentType,
-            byte[] fileContent
+            List<MultipartFile> files
     ) {
+        List<FileEntity> savedFiles = new ArrayList<>();
         FolderEntity parentFolder = folderDtoToFolderEntity(parent);
 
-        String keyName = genFilename(32);
-        PutObjectRequest request = PutObjectRequest.builder()
-                .key(keyName)
-                .bucket(bucketName)
-                .build();
-
         try {
-            PutObjectResponse putObjectResponse = s3Client.putObject(request, RequestBody.fromBytes(fileContent));
+            for (MultipartFile file : files) {
+                uploadAndSaveFile(file, parentFolder, savedFiles);
+            }
 
-            FileEntity file = FileEntity.builder()
-                    .fileName(fileName)
-                    .type(contentType)
-                    .folder(parentFolder)
-                    .size(size)
-                    .key(keyName)
-                    .build();
-
-            FileEntity savedFile = fileRepository.save(file);
-            return fileEntityToFileDTO(savedFile);
+            return savedFiles.stream()
+                    .map(this::fileEntityToFileDTO)
+                    .toList();
         } catch (Exception e) {
             throw new RuntimeException("Error uploading to s3", e);
         }
@@ -99,12 +93,16 @@ public class FileServiceImpl implements FileService {
     }
 
     private FileDTO fileEntityToFileDTO(FileEntity file) {
+        String signedUrl = createPresignedGetUrl(file.getKey());
+
         return FileDTO.builder()
                 .id(file.getId())
                 .fileName(file.getFileName())
                 .key(file.getKey())
+                .signedUrl(signedUrl)
                 .size(file.getSize())
                 .type(file.getType())
+                .createdAt(file.getCreatedAt())
                 .build();
     }
 
@@ -124,7 +122,10 @@ public class FileServiceImpl implements FileService {
                 .id(folder.getId())
                 .name(folder.getName())
                 .parentId(folder.getParent() != null ? folder.getParent().getId() : null)
-                .files(folder.getFiles())
+                .files(folder.getFiles().stream()
+                        .map(this::fileEntityToFileDTO)
+                        .collect(Collectors.toSet())
+                )
                 .children(new HashSet<FolderDTO>())
                 .build();
     }
@@ -133,9 +134,54 @@ public class FileServiceImpl implements FileService {
         return FolderEntity.builder()
                 .id(folder.getId())
                 .name(folder.getName())
-                .files(folder.getFiles())
+//                .files(folder.getFiles())
                 .build();
     }
 
+
+    private void uploadAndSaveFile(MultipartFile file, FolderEntity parentFolder, List<FileEntity> savedFiles) {
+        String keyName = genFilename(32);
+        PutObjectRequest request = PutObjectRequest.builder()
+                .key(keyName)
+                .bucket(bucketName)
+                .build();
+
+        try {
+            s3Client.putObject(request, RequestBody.fromBytes(file.getBytes()));
+
+            FileEntity fileEntity = FileEntity.builder()
+                    .fileName(file.getOriginalFilename())
+                    .type(file.getContentType())
+                    .folder(parentFolder)
+                    .size(file.getSize())
+                    .key(keyName)
+                    .build();
+
+            FileEntity savedFile = fileRepository.save(fileEntity);
+            savedFiles.add(savedFile);
+
+        } catch (IOException e) {
+            throw new UncheckedIOException("Error reading file bytes", e);
+        }
+    }
+
+
+    public String createPresignedGetUrl(String keyName) {
+        try (S3Presigner presigner = S3Presigner.create()) {
+
+            GetObjectRequest objectRequest = GetObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(keyName)
+                    .build();
+
+            GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
+                    .signatureDuration(Duration.ofHours(1))
+                    .getObjectRequest(objectRequest)
+                    .build();
+
+            PresignedGetObjectRequest presignedRequest = presigner.presignGetObject(presignRequest);
+            return presignedRequest.url().toExternalForm();
+        }
+    }
 
 }

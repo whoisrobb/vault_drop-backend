@@ -2,17 +2,15 @@ package com.muchiri.vault_drop.service;
 
 import com.muchiri.vault_drop.dto.FileDTO;
 import com.muchiri.vault_drop.dto.FolderDTO;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
 public interface FileService {
 
-    FileDTO create(
+    List<FileDTO> create(
         final FolderDTO parent,
-        final String fileName,
-        final Long size,
-        final String contentType,
-        byte[] fileContent
+        List<MultipartFile> files
     );
 
     List<FileDTO> findFolderFiles(String folderId);

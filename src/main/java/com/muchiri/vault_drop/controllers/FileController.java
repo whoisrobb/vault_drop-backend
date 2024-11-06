@@ -37,26 +37,18 @@ public class FileController {
 
     @PostMapping("/{folderId}")
     public ResponseEntity<?> saveFile(
-            @RequestPart("file") MultipartFile file,
-            @PathVariable String folderId,
-            @RequestParam("fileName") String fileName
+            @RequestPart(value = "files") List<MultipartFile> files,
+            @PathVariable String folderId
         ) throws IOException {
 
-        if (file.isEmpty()) {
+        if (files == null || files.isEmpty()) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("No file selected to upload!");
         }
 
         FolderDTO parent = folderService.findById(folderId);
+        List<FileDTO> createdFiles = fileService.create(parent, files);
 
-        FileDTO createdFile = fileService.create(
-            parent,
-            fileName,
-            file.getSize(),
-            file.getContentType(),
-            file.getBytes()
-        );
-
-        return new ResponseEntity<>(createdFile, HttpStatus.CREATED);
+        return new ResponseEntity<>(createdFiles, HttpStatus.CREATED);
     }
     
 }

@@ -1,5 +1,6 @@
 package com.muchiri.vault_drop.dto;
 
+import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -20,8 +21,10 @@ public class FolderDTO {
     private String name;
     private String parentId;
     private Set<FolderDTO> children;
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
 
     @Builder.Default
-    private Set<FileEntity> files = new HashSet<>();
+    private Set<FileDTO> files = new HashSet<>();
 
 }
